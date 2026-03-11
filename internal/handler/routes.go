@@ -4,8 +4,7 @@ import (
 	"context"
 	"net/http"
 
-	"booking-system/internal/detector"
-	"booking-system/internal/extractor"
+	"booking-system/internal/pipeline"
 	"booking-system/internal/repository"
 
 	"github.com/gin-gonic/gin"
@@ -19,6 +18,11 @@ type EmailRequest struct {
 }
 
 func RegisterRoutes(r *gin.Engine, repo *repository.BookingRepository) {
+
+	// ⭐ create pipeline service
+	svc := &pipeline.Service{
+		Repo: repo,
+	}
 
 	r.GET("/health", func(c *gin.Context) {
 		c.JSON(200, gin.H{"status": "ok"})
@@ -35,7 +39,7 @@ func RegisterRoutes(r *gin.Engine, repo *repository.BookingRepository) {
 		c.JSON(200, data)
 	})
 
-	// ⭐ MAIN INGEST PIPELINE
+	// ⭐ CLEAN INGEST ENDPOINT
 	r.POST("/ingest/email", func(c *gin.Context) {
 
 		var req EmailRequest
@@ -44,61 +48,19 @@ func RegisterRoutes(r *gin.Engine, repo *repository.BookingRepository) {
 			return
 		}
 
-		// ⭐ Step 1 — Detection
-		detectRes := detector.DetectEmail(req.Subject, req.Sender, req.Body)
+		res, err := svc.ProcessEmail(
+			context.TODO(),
+			req.UserID,
+			req.Sender,
+			req.Subject,
+			req.Body,
+		)
 
-		if !detectRes.IsBooking {
-			c.JSON(200, gin.H{
-				"stage":      "detection",
-				"message":    "not a booking email",
-				"confidence": detectRes.Confidence,
-				"signals":    detectRes.Signals,
-			})
-			return
-		}
-
-		// ⭐ Step 2 — Extraction
-		extractRes := extractor.ExtractFlight(req.Body, req.UserID)
-
-		if extractRes.Confidence < 0.4 {
-			c.JSON(200, gin.H{
-				"stage":      "extraction",
-				"message":    "booking detected but extraction weak",
-				"confidence": extractRes.Confidence,
-				"fields":     extractRes.FieldsFound,
-			})
-			return
-		}
-
-		booking := extractRes.Booking
-
-		// ⭐ Step 3 — Duplicate check
-		exists, err := repo.Exists(context.TODO(), booking.UserID, booking.BookingRef)
 		if err != nil {
 			c.JSON(500, gin.H{"error": err.Error()})
 			return
 		}
 
-		if exists {
-			c.JSON(200, gin.H{
-				"stage":   "storage",
-				"message": "duplicate booking",
-			})
-			return
-		}
-
-		// ⭐ Step 4 — Save
-		err = repo.Save(context.TODO(), booking)
-		if err != nil {
-			c.JSON(500, gin.H{"error": err.Error()})
-			return
-		}
-
-		c.JSON(200, gin.H{
-			"stage":      "completed",
-			"message":    "booking stored",
-			"confidence": extractRes.Confidence,
-			"booking":    booking,
-		})
+		c.JSON(200, res)
 	})
 }
