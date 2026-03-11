@@ -63,4 +63,15 @@ func RegisterRoutes(r *gin.Engine, repo *repository.BookingRepository) {
 
 		c.JSON(200, res)
 	})
+
+	r.GET("/bookings/upcoming", func(c *gin.Context) {
+
+		data, err := repo.GetUpcoming(context.TODO())
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+	
+		c.JSON(200, data)
+	})
 }

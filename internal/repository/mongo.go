@@ -40,3 +40,21 @@ func (r *BookingRepository) Exists(ctx context.Context, userID, ref string) (boo
 	count, err := r.Collection.CountDocuments(ctx, filter)
 	return count > 0, err
 }
+
+func (r *BookingRepository) GetUpcoming(ctx context.Context) ([]models.Booking, error) {
+
+	filter := bson.M{
+		"start_date": bson.M{
+			"$gte": time.Now(),
+		},
+	}
+
+	cursor, err := r.Collection.Find(ctx, filter)
+	if err != nil {
+		return nil, err
+	}
+
+	var bookings []models.Booking
+	err = cursor.All(ctx, &bookings)
+	return bookings, err
+}
